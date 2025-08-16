@@ -1,0 +1,1 @@
+To prove my expertise in AI Agents as well as implementations along my learning path, I will be contributing to this repo for creating AI Agents from scratch, and eventually being able to create MULTI-AGENT SYSTEMS (from scratch)
