@@ -1,19 +1,12 @@
 import json
-from dotenv import load_dotenv
-import os
-from groq import Groq
 
-load_dotenv()
-
-def generate_html(prompt):
-  return "some html stuff goes here"
-
-def generate_css(html_code, prompt):
-  return "some css stuff goes here"
-
+# Define an Agent class that runs a structured Thought -> Action -> Observation -> Final loop
 class Agent:
   def __init__(self, client, tools_list):
+    # Save the LLM client (OpenAI client)
     self.client = client
+    
+    # Define the system prompt with rules for loop stages and JSON format
     self.system = """
       You are a project manager with a knack for design sense and love for beautiful landing pages. 
       Given a user's task, you must work in a process following the loop of Thought, Action, Observation, 
@@ -140,41 +133,96 @@ class Agent:
         }
       }
       """
+    
+    # Store the conversation history
     self.messages: list = []
+    
+    # Register tools: map tool name ("generate_html", "generate_css") to Python functions
     self.tools = {tool_name: tool_func for tool_name, tool_func in tools_list.items()}
+    # {
+    #   "generate_html": <function generate_html at 0x...>,
+    #   "generate_css": <function generate_css at 0x...>
+    # }
+    
+    # Add the system prompt as the first message if provided
     if self.system:
       self.messages.append({"role": "system", "content": self.system})
   
+  # Wrapper to call the LLM with the conversation so far
+  def call_LLM_here(self, promptCallLLM):
+    response = self.client.responses.create(
+      model="gpt-5",       # Use GPT-5 model
+      input=promptCallLLM  # Full conversation history
+    )
+    outp = response.output_text  # Extract the text output
+    return outp
+
+  # Core execution loop: keeps calling the LLM until "final" stage is reached
   def execute_loop(self):
     final_output = {}
     while True:
-      llm_text = call_LLM_here(self.messages)
+      # Call LLM with current conversation history
+      llm_text = self.call_LLM_here(self.messages)
+
+      # Parse the LLM JSON response
       llm_output = json.loads(llm_text)
-      if llm_output["stage"] == "thought" or llm_output["stage"] == "observation":
+      print(llm_output)
+      stageCurr = llm_output["stage"]
+      # Handle "thought" and "observation" stages -> just log and continue
+      if stageCurr == "thought" or stageCurr == "observation":
+        print(f"------------- STAGE: {stageCurr} -------------")
+        if stageCurr=="thought": print(f"Thought: {llm_output["thought"]}")
+        elif stageCurr=="observation": print(f"Observation: {llm_output["observation"]}")
+        print(f"----------------------------------------------")
+        print()
+        print()
         self.messages.append({"role": "assistant", "content": llm_text})
-      elif llm_output["stage"] == "action":
+      
+      # Handle "action" stage -> call the tool and append the tool result
+      elif stageCurr == "action":
+        print(f"------------- STAGE: ACTION -------------")
+        print(f"Tool: {list(llm_output["action"].keys())[0]}")
+        print(f"----------------------------------------------")
+        print()
+        print()
         tool_output = self.run_tool(llm_output["action"])
-        self.messages.append({"role": "assistant", "content": f"""{json.dumps(tool_output)}"""})
-      elif llm_output["stage"] == "final":
+        
+        observation_json = {
+            "stage": "observation",
+            "action": None,
+            "thought": None,
+            "observation": tool_output,
+            "final_output": None
+        }
+        self.messages.append({"role": "assistant", "content": json.dumps(observation_json)})
+      
+      # Handle "final" stage -> break out of the loop and return the result
+      elif stageCurr == "final":
+        print(f"------------- STAGE: FINAL OUTPUT -------------")
+        print(f"----------------------------------------------")
+        print()
+        print()
         final_output = llm_output["final_output"]
         break
     return final_output
 
+  # Executes a given tool call, e.g. {"generate_html": {"prompt": "..."}}
   def run_tool(self, tool_call):
-    """
-    tool_call: dict like {"generate_html": {"prompt": "Hello World"}}
-    """
     for tool_name, params in tool_call.items():
         if tool_name not in self.tools:
             raise ValueError(f"Tool '{tool_name}' is not available.")
         
-        func = self.tools[tool_name]  # get the actual function
-        return func(**params)
+        func = self.tools[tool_name]  # Get the actual Python function
+        return func(**params)         # Call it with the provided parameters
         
+  # Main entrypoint: run the loop and export results to Markdown
   def __call__(self, user_input):
     if user_input:
       self.messages.append({"role": "user", "content": user_input})
+    
     final_output = self.execute_loop()
+    
+    # Export result (HTML + CSS) to markdown file
     markdown_output = f"""
     # Code output
     ## User input: {user_input}
@@ -187,10 +235,3 @@ class Agent:
       f.write(markdown_output)
 
     print("Markdown with code snippet exported!")
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-agent = Agent(client=client, tools_list={
-    "generate_html": generate_html,
-    "generate_css": generate_css
-})
-agent("Make me a beautiful landing page for my cat nursery")
