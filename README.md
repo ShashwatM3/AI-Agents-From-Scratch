@@ -1,4 +1,4 @@
-## Built an AI Agent to produce frontend prod-ready landing pages in <10 minutes
+## Built a ReAct AI Agent from scratch
 
 ### Just for comparison, here is an example:
 Prompt: Make me a beautiful landing page for my cat nursery
